@@ -47,12 +47,14 @@ DEV_TOKEN_MAP: Dict[str, UserIdentity] = {
 }
 
 
-def derive_identity(token: Optional[str]) -> UserIdentity:
+def derive_identity(token: Optional[str] = None, fleet_token: Optional[str] = None) -> UserIdentity:
     """
-    Derives user identity and role from bearer token server-side.
-    Falls back to anonymous identity with zero privileges if token invalid.
+    Derives user identity and role from bearer or X-Fleet-Token header server-side.
+    Priority: fleet_token (X-Fleet-Token) -> token (Authorization).
+    Falls back to anonymous identity if missing or invalid.
     """
-    if not token:
+    raw_token = fleet_token or token
+    if not raw_token:
         return UserIdentity(
             token="anonymous",
             user_id="anon",
@@ -62,7 +64,7 @@ def derive_identity(token: Optional[str]) -> UserIdentity:
             allowed_domains=[],
         )
     
-    clean_token = token.replace("Bearer ", "").strip()
+    clean_token = raw_token.replace("Bearer ", "").strip()
     return DEV_TOKEN_MAP.get(clean_token, UserIdentity(
         token=clean_token,
         user_id="unknown",

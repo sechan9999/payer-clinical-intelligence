@@ -90,22 +90,24 @@ def dispatch_action(
     approval_id: str,
     supervisor_identity: UserIdentity,
     store: Optional[DataStore] = None,
-) -> Tuple[bool, str]:
+) -> Tuple[bool, str, int]:
     """
     HTTP-only human dispatch path. Can only dispatch items that are APPROVED.
+    Returns (success, message, http_status_code).
+    Refuses with 409 Conflict if no human signed off prior to dispatch.
     """
     db = store or get_store()
     
     if supervisor_identity.role not in [UserRole.MEDICAL_DIRECTOR, UserRole.PAYER_ADMIN]:
-        return False, f"User role '{supervisor_identity.role.value}' is not authorized to dispatch items."
+        return False, f"User role '{supervisor_identity.role.value}' is not authorized to dispatch items.", 403
 
     items = db.get_approval_items()
     target = next((i for i in items if i.approval_id == approval_id), None)
     if not target:
-        return False, f"Approval ID '{approval_id}' not found."
+        return False, f"Approval ID '{approval_id}' not found.", 404
 
     if target.status != ApprovalStatus.APPROVED:
-        return False, f"Approval ID '{approval_id}' must be in APPROVED state before dispatch (current: '{target.status.value}')."
+        return False, f"Conflict: Approval ID '{approval_id}' is in '{target.status.value}' state. Human sign-off required prior to dispatch.", 409
 
     now_iso = datetime.utcnow().isoformat()
     success = db.update_approval_status(approval_id, ApprovalStatus.DISPATCHED, supervisor_identity.name, now_iso)
@@ -118,5 +120,5 @@ def dispatch_action(
             actor_role=supervisor_identity.role,
             details={"approval_id": approval_id, "dispatched_by": supervisor_identity.name}
         ))
-        return True, "Action successfully dispatched to external recipient."
-    return False, "Failed to update dispatch status."
+        return True, "Action successfully dispatched to external recipient.", 200
+    return False, "Failed to update dispatch status.", 500

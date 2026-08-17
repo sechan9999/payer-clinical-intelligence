@@ -1,13 +1,14 @@
 import inspect
 import pytest
 from app.approvals import approve_action, dispatch_action, queue_for_human_approval
-from app.domain import ApprovalStatus, DomainDomain, UserRole
+from app.domain import ApprovalStatus, AutonomyGrade, DomainDomain, UserRole
 from app.fleet import FleetCoordinator
 from app.guardrails import validate_input_query, validate_output_response
 from app.identity import derive_identity
 from app.registry import get_agent_registry
 from app.retrieval import permitted_documents
 from app.store import DataStore
+from app.tracing import redact_url_credentials
 import app.tools as tools_module
 
 
@@ -42,26 +43,40 @@ def test_tool_signatures_have_no_role_params():
         assert len(overlap) == 0, f"Tool '{func.__name__}' accepts disallowed model-controlled parameter(s): {overlap}"
 
 
+def test_autonomy_grades_and_no_send_tools():
+    """
+    ASSERTION 2: Autonomy Grade Governance.
+    Agents registered as 'drafts_only' or 'read_only' must contain ZERO tools
+    with 'send' or 'dispatch' in their tool names.
+    """
+    registry = get_agent_registry()
+    for agent in registry:
+        assert agent.autonomy_grade in [AutonomyGrade.DRAFTS_ONLY, AutonomyGrade.READ_ONLY]
+        for tool_name in agent.tools:
+            assert "send" not in tool_name.lower(), f"Agent '{agent.name}' is {agent.autonomy_grade.value} but contains forbidden tool '{tool_name}'"
+            assert "dispatch" not in tool_name.lower(), f"Agent '{agent.name}' is {agent.autonomy_grade.value} but contains forbidden tool '{tool_name}'"
+
+
 def test_identity_derivation():
-    # Valid Payer Admin
-    ident1 = derive_identity("tok-payer-admin")
+    # Valid Payer Admin via Authorization header
+    ident1 = derive_identity(token="tok-payer-admin")
     assert ident1.role == UserRole.PAYER_ADMIN
     assert DomainDomain.PAYER in ident1.allowed_domains
 
-    # Valid Clinician
-    ident2 = derive_identity("tok-clinician")
+    # Valid Clinician via X-Fleet-Token header
+    ident2 = derive_identity(fleet_token="tok-clinician")
     assert ident2.role == UserRole.CLINICIAN
     assert DomainDomain.CLINICAL in ident2.allowed_domains
 
     # Invalid / Missing
-    ident3 = derive_identity("invalid-token")
+    ident3 = derive_identity(token="invalid-token")
     assert ident3.role == UserRole.ANONYMOUS
     assert len(ident3.allowed_domains) == 0
 
 
 def test_sql_pre_filtering_role_isolation(test_db):
-    clinician = derive_identity("tok-clinician")
-    payer_admin = derive_identity("tok-payer-admin")
+    clinician = derive_identity(token="tok-clinician")
+    payer_admin = derive_identity(token="tok-payer-admin")
 
     # Clinician attempts to retrieve Payer Rate sheet
     docs_clinician, denial = permitted_documents(clinician, "Rate Sheet Fee Schedule", domain_filter=DomainDomain.PAYER, store=test_db)
@@ -101,8 +116,8 @@ def test_citation_output_guardrail():
 
 
 def test_human_approval_gate_lifecycle(test_db):
-    claims_spec = derive_identity("tok-claims-spec")
-    director = derive_identity("tok-medical-director")
+    claims_spec = derive_identity(token="tok-claims-spec")
+    director = derive_identity(token="tok-medical-director")
 
     # 1. Queue approval item
     item = queue_for_human_approval(
@@ -121,22 +136,31 @@ def test_human_approval_gate_lifecycle(test_db):
     assert not appr_bad
     assert "not authorized" in msg_bad
 
-    # 3. Premature dispatch attempt (before approval)
-    disp_bad, msg_disp = dispatch_action(item.approval_id, director, store=test_db)
+    # 3. Premature dispatch attempt (before approval) -> Refuses with HTTP 409
+    disp_bad, msg_disp, http_status = dispatch_action(item.approval_id, director, store=test_db)
     assert not disp_bad
-    assert "must be in APPROVED state" in msg_disp
+    assert http_status == 409
+    assert "Conflict" in msg_disp
 
     # 4. Supervisor approves
     appr_ok, msg_appr = approve_action(item.approval_id, director, store=test_db)
     assert appr_ok
 
-    # 5. Dispatch after approval
-    disp_ok, msg_disp_ok = dispatch_action(item.approval_id, director, store=test_db)
+    # 5. Dispatch after approval -> Success HTTP 200
+    disp_ok, msg_disp_ok, http_status_ok = dispatch_action(item.approval_id, director, store=test_db)
     assert disp_ok
+    assert http_status_ok == 200
+
+
+def test_credential_redacting():
+    dirty_url = "postgresql://user_admin:secret_pass_1234@localhost:5432/fleet_db"
+    clean_url = redact_url_credentials(dirty_url)
+    assert "secret_pass_1234" not in clean_url
+    assert "postgresql://user_admin:***@localhost:5432/fleet_db" in clean_url
 
 
 def test_audit_trail_logging(test_db):
-    clinician = derive_identity("tok-clinician")
+    clinician = derive_identity(token="tok-clinician")
     # Execute query that generates audit logs
     tools_module.query_payer_policies("Fee schedule rates", clinician, store=test_db)
     
@@ -158,7 +182,7 @@ def test_agent_registry():
 
 def test_fleet_coordinator_routing():
     coordinator = FleetCoordinator()
-    payer_admin = derive_identity("tok-payer-admin")
+    payer_admin = derive_identity(token="tok-payer-admin")
 
     res = coordinator.route_and_execute(
         query="Prior Auth policy for Cardiac MRI CPT 75561",

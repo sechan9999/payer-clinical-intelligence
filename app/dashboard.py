@@ -69,7 +69,13 @@ st.sidebar.markdown(f"**Department:** {current_identity.department}")
 st.sidebar.markdown(f"**Allowed Domains:** {[d.value for d in current_identity.allowed_domains]}")
 
 st.sidebar.markdown("---")
-st.sidebar.info("🔒 **Server-Derived Identity**: Roles cannot be altered by model prompts or tool parameters.")
+st.sidebar.markdown("### 🏷️ Agent Autonomy Grades")
+for a in get_agent_registry():
+    grade_badge = "📝 DRAFTS ONLY" if a.autonomy_grade.value == "drafts_only" else "📖 READ ONLY"
+    st.sidebar.markdown(f"- **{a.name}**: `{grade_badge}`")
+
+st.sidebar.markdown("---")
+st.sidebar.info("🔒 **Server-Derived Identity & Token Header (`X-Fleet-Token`)**: Roles cannot be altered by model prompts or tool parameters.")
 
 # Main Header
 st.markdown('<div class="main-header">Governed Payer Clinical Intelligence Fleet</div>', unsafe_allow_html=True)

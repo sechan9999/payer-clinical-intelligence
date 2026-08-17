@@ -40,11 +40,16 @@ def read_root():
 
 
 @app.post("/fleet/query")
-def query_fleet(request: FleetQueryRequest, authorization: Optional[str] = Header(None)):
+def query_fleet(
+    request: FleetQueryRequest,
+    authorization: Optional[str] = Header(None),
+    x_fleet_token: Optional[str] = Header(None, alias="X-Fleet-Token")
+):
     agent = get_root_agent()
+    raw_token = x_fleet_token or authorization
     result = agent.handle_request(
         query=request.query,
-        auth_token=authorization,
+        auth_token=raw_token,
         target_domain=request.target_domain,
         action_type=request.action_type,
         params=request.params,
@@ -58,8 +63,13 @@ def get_registry():
 
 
 @app.get("/fleet/approvals")
-def list_approvals(status: Optional[str] = None, authorization: Optional[str] = Header(None)):
-    identity = derive_identity(authorization)
+def list_approvals(
+    status: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    x_fleet_token: Optional[str] = Header(None, alias="X-Fleet-Token")
+):
+    raw_token = x_fleet_token or authorization
+    identity = derive_identity(raw_token)
     db = get_store()
     
     status_enum = None
@@ -78,8 +88,13 @@ def list_approvals(status: Optional[str] = None, authorization: Optional[str] = 
 
 
 @app.post("/fleet/approvals/{approval_id}/approve")
-def approve_human_gate(approval_id: str, authorization: Optional[str] = Header(None)):
-    identity = derive_identity(authorization)
+def approve_human_gate(
+    approval_id: str,
+    authorization: Optional[str] = Header(None),
+    x_fleet_token: Optional[str] = Header(None, alias="X-Fleet-Token")
+):
+    raw_token = x_fleet_token or authorization
+    identity = derive_identity(raw_token)
     ok, message = approve_action(approval_id, identity)
     if not ok:
         raise HTTPException(status_code=403, detail=message)
@@ -87,17 +102,26 @@ def approve_human_gate(approval_id: str, authorization: Optional[str] = Header(N
 
 
 @app.post("/fleet/approvals/{approval_id}/send")
-def dispatch_human_gate(approval_id: str, authorization: Optional[str] = Header(None)):
-    identity = derive_identity(authorization)
-    ok, message = dispatch_action(approval_id, identity)
+def dispatch_human_gate(
+    approval_id: str,
+    authorization: Optional[str] = Header(None),
+    x_fleet_token: Optional[str] = Header(None, alias="X-Fleet-Token")
+):
+    raw_token = x_fleet_token or authorization
+    identity = derive_identity(raw_token)
+    ok, message, http_status = dispatch_action(approval_id, identity)
     if not ok:
-        raise HTTPException(status_code=403, detail=message)
+        raise HTTPException(status_code=http_status, detail=message)
     return {"success": True, "message": message, "approval_id": approval_id, "dispatched_by": identity.name}
 
 
 @app.get("/fleet/audit")
-def get_audit_trail(authorization: Optional[str] = Header(None)):
-    identity = derive_identity(authorization)
+def get_audit_trail(
+    authorization: Optional[str] = Header(None),
+    x_fleet_token: Optional[str] = Header(None, alias="X-Fleet-Token")
+):
+    raw_token = x_fleet_token or authorization
+    identity = derive_identity(raw_token)
     db = get_store()
     logs = db.get_audit_logs()
     return {
@@ -108,8 +132,12 @@ def get_audit_trail(authorization: Optional[str] = Header(None)):
 
 
 @app.get("/fleet/events")
-def get_activity_stream(authorization: Optional[str] = Header(None)):
-    identity = derive_identity(authorization)
+def get_activity_stream(
+    authorization: Optional[str] = Header(None),
+    x_fleet_token: Optional[str] = Header(None, alias="X-Fleet-Token")
+):
+    raw_token = x_fleet_token or authorization
+    identity = derive_identity(raw_token)
     db = get_store()
     activities = db.get_activities()
     return {

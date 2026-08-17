@@ -2,79 +2,46 @@
 
 > Two governed AI agents (**Payer Intelligence** + **Clinical & Growth**) over one auditable RAG layer — demo-scale, production-shaped.
 
-Built on the governed multi-agent fleet architecture of [`gemini-ops-fleet`](https://github.com/sechan9999/gemini-ops-fleet) for the **Google Cloud / Gemini Enterprise Agent Platform**.
+Built on the governed multi-agent fleet architecture of [`gemini-ops-fleet`](https://github.com/sechan9999/gemini-ops-fleet) for the **Google Cloud / Gemini Enterprise Agent Platform** (The Fortified Enterprise Fleet Track).
 
 ---
 
-## 🏛️ System Architecture & Key Governance Principles
+## 💡 Inspiration & Core Philosophy
 
-The system provides back-office decision intelligence for healthcare payers, health systems, and value-based care networks. It enforces strict compliance, data isolation, and human control across 5 core assertions:
+Most AI demos focus on "how much can the agent do on its own?" We inverted the question: **"What is the agent structurally unable to do?"** — which is the only question a healthcare organization with strict compliance mandates can actually act on.
 
-```
-                                 ┌──────────────────────────────┐
-                                 │      User Query / Token      │
-                                 └──────────────┬───────────────┘
-                                                │
-                                                ▼
-                                 ┌──────────────────────────────┐
-                                 │    Server Identity (RBAC)    │
-                                 └──────────────┬───────────────┘
-                                                │
-                                                ▼
-                                 ┌──────────────────────────────┐
-                                 │   Input Guardrail Check      │
-                                 └──────────────┬───────────────┘
-                                                │
-                                                ▼
-                                 ┌──────────────────────────────┐
-                                 │   SQL Pre-Retrieval Filter   │
-                                 │  (permitted_documents SQL)   │
-                                 └──────────────┬───────────────┘
-                                                │
-                                                ▼
-                                 ┌──────────────────────────────┐
-                                 │     Domain Agent Fleet       │
-                       ┌─────────┴──────────────┬───────────────┴─────────┐
-                       │                        │                         │
-                       ▼                        ▼                         ▼
-         ┌───────────────────────────┐ ┌──────────────────┐ ┌──────────────────────────┐
-         │ Payer Intelligence Agent  │ │ Coordinator      │ │ Clinical & Growth Agent  │
-         │ - Policies, CPT 75561     │ │ - Intent Router  │ │ - Guidelines, Care Gaps  │
-         │ - Denial Appeals          │ └──────────────────┘ │ - HEDIS Outreach         │
-         │ - Prior Auth Queue        │                      │ - Growth Initiatives     │
-         └─────────────┬─────────────┘                      └─────────────┬────────────┘
-                       │                                                  │
-                       └────────────────────────┬─────────────────────────┘
-                                                │
-                                                ▼
-                                 ┌──────────────────────────────┐
-                                 │ Isolated Human Approval Gate │
-                                 │ (Prior Auth / Care Dispatch) │
-                                 └──────────────┬───────────────┘
-                                                │
-                                                ▼
-                                 ┌──────────────────────────────┐
-                                 │ Append-Only Audit & Telemetry│
-                                 └──────────────────────────────┘
-```
+This project is not interesting because the agents are autonomous. It is interesting because of what they are **prevented from reaching**, and because those limits are **enforced in code rather than requested in a prompt**.
 
-### The 5 Governance Claims:
-1. **Server-Derived Identity & Role Immutability**: Roles (`payer_admin`, `claims_specialist`, `clinician`, `growth_lead`, `medical_director`) are derived server-side from dev bearer tokens. No tool accepts a role argument, preventing model-driven privilege escalation.
-2. **SQL-Level Pre-Retrieval Data Segregation**: `retrieval.permitted_documents(user_role)` filters candidate records in SQL before semantic search/ranking occurs. Clinicians cannot access Payer contracted fee schedules; Payer analysts cannot access raw clinical PHI.
-3. **Input & Output Guardrail Interception**: Prevents prompt injections ("ignore previous instructions") and enforces citation tagging (`PAY-POL-101`, `CLN-GUIDE-401`) on all generated outputs.
-4. **Isolated Human-in-the-Loop (HITL) Gate**: Sensitive operations (Prior Auth submissions, patient care plan outreach) are held in `pending` approval status. Sending endpoints are HTTP-only and unreachable by any LLM tool signature.
-5. **Full Audit Traceability**: 100% of queries, tool calls, data access attempts, and security denials are logged to an append-only audit trail with OpenTelemetry governance attributes.
+---
+
+## 🏛️ 3 Structural Guarantees
+
+1. **Roles are Server-Derived (`X-Fleet-Token`)**: No tool accepts a role, identity, or employee ID argument. The model has zero vocabulary for claiming or escalating access. Authentication tokens are passed via `X-Fleet-Token` (or `Authorization`) headers.
+2. **Retrieval is Filtered in SQL**: Filtering runs *first* as security (`retrieval.permitted_documents()`); semantic ranking runs afterwards on the permitted set only. Clinicians asking for Payer contract rates receive an empty set, not a model-composed refusal.
+3. **Nothing Reaches External Recipients Unapproved**: Sensitive actions (Prior Auth submissions, patient care dispatches) are assigned an **Autonomy Grade of `drafts_only`**. Approving and sending are HTTP endpoints absent from every agent's tool set. A premature dispatch attempt returns **HTTP 409 Conflict**.
+
+---
+
+## 🏷️ Agent Autonomy Grades
+
+Every agent advertises its autonomy level in the central registry ([`app/registry.py`](file:///C:/Users/secha/.gemini/antigravity-ide/scratch/payer-clinical-agents/app/registry.py)):
+
+| Agent | Domain | Autonomy Grade | Key Capabilities & Restrictions |
+| :--- | :--- | :--- | :--- |
+| **Payer Intelligence** | `payer` | `drafts_only` | Policy RAG, CPT 75561 criteria, denial analysis, prior auth queueing. **Zero send/dispatch tools.** |
+| **Clinical & Growth** | `clinical` | `drafts_only` | ACC/AHA guideline search, HEDIS care gaps, growth outreach queueing. **Zero send/dispatch tools.** |
+| **Coordinator** | `cross_domain` | `read_only` | Cross-domain intent routing and server-derived identity propagation. |
 
 ---
 
 ## ⚡ Quickstart & Local Verification
 
-The codebase runs 100% offline with zero external GCP cloud credentials required for local dev/testing (SQLite in-memory DB + heuristic safety screen).
+The whole system runs 100% offline with zero cloud credentials required.
 
-### 1. Run Unit Tests (48+ Assertions)
+### 1. Run Unit Tests (11 Test Suites)
 ```bash
 uv sync --group dev
-uv run pytest tests/unit -q
+uv run pytest tests/unit -v
 ```
 
 ### 2. Run End-to-End Governance Demonstration
@@ -82,63 +49,16 @@ uv run pytest tests/unit -q
 uv run python demo.py
 ```
 
----
-
-## 🔌 Governance API Reference
-
-### `POST /fleet/query`
-Execute a query through the fleet coordinator.
-- Headers: `Authorization: Bearer tok-payer-admin` (or `tok-clinician`, `tok-claims-spec`, `tok-growth-lead`, `tok-medical-director`)
-- Body:
-```json
-{
-  "query": "Prior Authorization rules for Cardiac MRI CPT 75561",
-  "target_domain": "payer"
-}
-```
-
-### `GET /fleet/registry`
-Returns the catalog of registered agents, their versions, tool definitions, and restriction parameters.
-
-### `GET /fleet/approvals`
-List items in the Human Approval Queue (pending, approved, dispatched).
-
-### `POST /fleet/approvals/{approval_id}/approve`
-Approve a pending action (Requires `tok-medical-director` or `tok-payer-admin`).
-
-### `POST /fleet/approvals/{approval_id}/send`
-Dispatch an approved action to external recipients.
-
-### `GET /fleet/audit`
-Retrieve the append-only security audit log.
-
-### `GET /fleet/events`
-Stream the activity outbox events.
-
----
-
-## 🚢 Production Cloud Run Deployment
-
-To deploy to Google Cloud Run with Vertex AI integration:
-
+### 3. Run Interactive Streamlit Dashboard
 ```bash
-# 1. Authenticate with Google Cloud
-gcloud auth application-default login
-gcloud config set project YOUR_PROJECT_ID
-
-# 2. Enable GCP Services
-gcloud services enable \
-  aiplatform.googleapis.com run.googleapis.com \
-  sqladmin.googleapis.com secretmanager.googleapis.com \
-  --project=YOUR_PROJECT_ID
-
-# 3. Deploy via Docker / Cloud Run
-gcloud run deploy payer-clinical-agents \
-  --source . \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --min-instances 0
+uv run streamlit run app/dashboard.py
 ```
+
+---
+
+## 📜 Prior Art & Technical Disclosures
+
+Per hackathon rules, all code in this repository was newly written during the Submission Period for the healthcare Payer & Clinical domain. The design draws on architectural prior art from [`gemini-ops-fleet`](https://github.com/sechan9999/gemini-ops-fleet) and [`unified-ops-ax`](https://github.com/sechan9999/unified-ops-ax).
 
 ---
 

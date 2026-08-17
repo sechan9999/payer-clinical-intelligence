@@ -19,6 +19,12 @@ class DomainDomain(str, Enum):
     CROSS_DOMAIN = "cross_domain"
 
 
+class AutonomyGrade(str, Enum):
+    AUTONOMOUS = "autonomous"
+    DRAFTS_ONLY = "drafts_only"
+    READ_ONLY = "read_only"
+
+
 class ApprovalStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"

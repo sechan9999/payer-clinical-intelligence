@@ -104,11 +104,12 @@ def main():
     print(f"  Approval ID          : {appr_id}")
     assert queue_data.get("status") == "QUEUED_FOR_HUMAN_APPROVAL", "Claim 4a Failed: Action not queued!"
 
-    # 4b. Attempt premature dispatch before approval (should fail)
-    spec_identity = derive_identity("tok-claims-spec")
-    dispatch_ok, dispatch_err = dispatch_action(appr_id, spec_identity)
-    print(f"  Premature Dispatch Attempt by Claims Spec: Allowed={dispatch_ok} (Msg: '{dispatch_err}')")
+    # 4b. Attempt premature dispatch before approval by supervisor (refuses with HTTP 409 Conflict)
+    director_identity = derive_identity("tok-medical-director")
+    dispatch_ok, dispatch_err, http_code = dispatch_action(appr_id, director_identity)
+    print(f"  Premature Dispatch Attempt by Supervisor: Allowed={dispatch_ok} (HTTP {http_code}: '{dispatch_err}')")
     assert not dispatch_ok, "Claim 4b Failed: Unapproved action dispatched!"
+    assert http_code == 409, f"Claim 4b Failed: Expected HTTP 409 Conflict, got HTTP {http_code}"
 
     # 4c. Supervisor approves and dispatches action
     director_identity = derive_identity("tok-medical-director")
@@ -116,8 +117,8 @@ def main():
     print(f"  Supervisor Approval : Allowed={appr_ok} (Msg: '{appr_msg}')")
     assert appr_ok, "Claim 4c Failed: Supervisor approval failed!"
 
-    final_disp_ok, final_disp_msg = dispatch_action(appr_id, director_identity)
-    print(f"  Supervisor Dispatch : Allowed={final_disp_ok} (Msg: '{final_disp_msg}')")
+    final_disp_ok, final_disp_msg, final_code = dispatch_action(appr_id, director_identity)
+    print(f"  Supervisor Dispatch : Allowed={final_disp_ok} (HTTP {final_code}: '{final_disp_msg}')")
     assert final_disp_ok, "Claim 4c Failed: Approved action dispatch failed!"
     print("  [OK] Claim 4 PROVED: Sensitive action safely queued; dispatch refused until human approval.")
 
