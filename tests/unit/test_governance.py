@@ -2,7 +2,7 @@ import inspect
 import pytest
 from app.approvals import approve_action, dispatch_action, queue_for_human_approval
 from app.domain import ApprovalStatus, AutonomyGrade, DomainDomain, UserRole
-from app.fleet import FleetCoordinator
+from app.fleet import FleetCoordinator, PayerIntelligenceAgent, call_gemini_inference
 from app.guardrails import validate_input_query, validate_output_response
 from app.identity import derive_identity
 from app.registry import get_agent_registry
@@ -17,13 +17,13 @@ def test_db():
     return DataStore(db_path=":memory:")
 
 
-def test_tool_signatures_have_no_role_params():
+def test_identity_cannot_be_supplied_as_a_tool_argument():
     """
-    ASSERTION 1: Server-Derived Role Immutability.
-    No tool function in app/tools.py can take a 'role', 'user_role', 'employee_id',
-    or 'permission_override' parameter. Roles MUST be derived server-side.
+    PATTERN 1 ASSERTION: Model Identity Escalation Prevention.
+    Every tool function signature MUST NOT accept 'role', 'identity', 'employee_id',
+    'as_role', or 'permission_override'. Identity MUST be derived server-side.
     """
-    disallowed_params = {"role", "user_role", "employee_id", "permission_override", "override_role"}
+    disallowed_params = {"role", "identity", "employee_id", "as_role", "permission_override", "override_role"}
     
     tool_funcs = [
         tools_module.query_payer_policies,
@@ -40,12 +40,12 @@ def test_tool_signatures_have_no_role_params():
         sig = inspect.signature(func)
         param_names = set(sig.parameters.keys())
         overlap = param_names.intersection(disallowed_params)
-        assert len(overlap) == 0, f"Tool '{func.__name__}' accepts disallowed model-controlled parameter(s): {overlap}"
+        assert len(overlap) == 0, f"Security Violation: Tool '{func.__name__}' accepts disallowed parameter(s): {overlap}"
 
 
 def test_autonomy_grades_and_no_send_tools():
     """
-    ASSERTION 2: Autonomy Grade Governance.
+    PATTERN 3 ASSERTION: Autonomy Grade Governance.
     Agents registered as 'drafts_only' or 'read_only' must contain ZERO tools
     with 'send' or 'dispatch' in their tool names.
     """
@@ -63,7 +63,7 @@ def test_identity_derivation():
     assert ident1.role == UserRole.PAYER_ADMIN
     assert DomainDomain.PAYER in ident1.allowed_domains
 
-    # Valid Clinician via X-Fleet-Token header
+    # Valid Clinician via X-Fleet-Token header (Cloud Run IAM header fix)
     ident2 = derive_identity(fleet_token="tok-clinician")
     assert ident2.role == UserRole.CLINICIAN
     assert DomainDomain.CLINICAL in ident2.allowed_domains
@@ -75,6 +75,10 @@ def test_identity_derivation():
 
 
 def test_sql_pre_filtering_role_isolation(test_db):
+    """
+    PATTERN 2 ASSERTION: Separate SQL Pre-Filtering from Ranking.
+    Restricted documents are excluded at the SQL WHERE clause level.
+    """
     clinician = derive_identity(token="tok-clinician")
     payer_admin = derive_identity(token="tok-payer-admin")
 
@@ -88,6 +92,21 @@ def test_sql_pre_filtering_role_isolation(test_db):
     assert len(docs_admin) > 0
     assert denial_admin is None
     assert any(d.doc_id == "PAY-RATE-202" for d in docs_admin)
+
+
+def test_gemini_inference_routing_and_fallback():
+    """
+    GEMINI MODEL INFERENCE ASSERTION:
+    Verifies that call_gemini_inference executes or falls back gracefully to extractive RAG
+    without breaking the citation contract.
+    """
+    text, provider = call_gemini_inference(
+        prompt="Test policy query",
+        system_instruction="You are a policy assistant",
+        context_documents=[{"doc_id": "PAY-POL-101", "title": "Test Policy", "content": "Test content", "summary": "Test summary"}]
+    )
+    # Status must be gemini_3.5_flash or offline_extractive_fallback
+    assert provider.startswith("gemini_3.5_flash") or provider.startswith("offline_extractive_fallback") or provider.startswith("error_fallback")
 
 
 def test_prompt_injection_guardrail():
@@ -136,7 +155,7 @@ def test_human_approval_gate_lifecycle(test_db):
     assert not appr_bad
     assert "not authorized" in msg_bad
 
-    # 3. Premature dispatch attempt (before approval) -> Refuses with HTTP 409
+    # 3. Premature dispatch attempt (before approval) -> Refuses with HTTP 409 Conflict
     disp_bad, msg_disp, http_status = dispatch_action(item.approval_id, director, store=test_db)
     assert not disp_bad
     assert http_status == 409

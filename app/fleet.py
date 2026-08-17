@@ -1,4 +1,7 @@
-from typing import Dict, List, Optional
+import logging
+import os
+from typing import Dict, List, Optional, Tuple
+from app.config import check_runtime_environment
 from app.domain import DomainDomain, UserIdentity, UserRole
 from app.guardrails import validate_input_query, validate_output_response
 from app.registry import get_agent_metadata
@@ -12,6 +15,68 @@ from app.tools import (
     summarize_clinical_history,
     verify_coverage_eligibility,
 )
+
+logger = logging.getLogger("payer_clinical_fleet")
+
+# Import google-genai SDK if available
+try:
+    from google import genai
+    from google.genai import types
+    HAS_GENAI_SDK = True
+except ImportError:
+    HAS_GENAI_SDK = False
+
+
+def call_gemini_inference(
+    prompt: str,
+    system_instruction: str,
+    context_documents: List[Dict],
+    model_name: str = "gemini-3.5-flash"
+) -> Tuple[Optional[str], str]:
+    """
+    Executes real LLM inference via Gemini 3.5 Flash using google.genai SDK Client.
+    Returns (generated_text, provider_status).
+    If GCP credentials/API keys are missing, falls back gracefully to extractive synthesis.
+    """
+    runtime = check_runtime_environment()
+    if not HAS_GENAI_SDK or not runtime["has_gcp_credentials"]:
+        return None, "offline_extractive_fallback"
+
+    try:
+        # Initialize GenAI Client for Vertex AI / Gemini API
+        gcp_project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
+        location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        
+        if gcp_project:
+            client = genai.Client(vertexai=True, project=gcp_project, location=location)
+        else:
+            client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+        doc_context_str = "\n\n".join([
+            f"Document ID: [{d['doc_id']}]\nTitle: {d['title']}\nContent: {d['content']}\nSummary: {d['summary']}"
+            for d in context_documents
+        ])
+
+        full_prompt = (
+            f"User Query: {prompt}\n\n"
+            f"Retrieved Permitted Context Documents:\n{doc_context_str}\n\n"
+            f"Instructions: Synthesize a concise, accurate answer based strictly on the retrieved context documents above. "
+            f"You MUST explicitly cite the relevant Document IDs (e.g. [PAY-POL-101]) in your answer."
+        )
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=full_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.2,
+                max_output_tokens=1024,
+            )
+        )
+        return response.text, f"gemini_3.5_flash_vertex ({gcp_project or 'api_key'})"
+    except Exception as ex:
+        logger.warning(f"Gemini API invocation failed ({type(ex).__name__}): {ex}. Falling back to extractive RAG.")
+        return None, f"error_fallback_{type(ex).__name__}"
 
 
 class PayerIntelligenceAgent:
@@ -45,12 +110,22 @@ class PayerIntelligenceAgent:
             }
 
         citations = result["citation_ids"]
-        doc_summaries = "\n".join([f"- [{d['doc_id']}] {d['title']}: {d['summary']}" for d in result["documents"]])
+        docs = result["documents"]
         
-        response_text = f"Payer Policy Analysis:\n{doc_summaries}\n\nCitations: {', '.join(citations)}"
+        # Attempt Gemini 3.5 Flash Inference
+        sys_inst = "You are the Payer Intelligence Agent. Answer using permitted coverage policies and cite Document IDs."
+        gemini_text, provider_status = call_gemini_inference(query, sys_inst, docs)
+
+        if gemini_text:
+            response_text = f"Payer Policy Analysis (Gemini 3.5 Flash):\n{gemini_text}\n\nCitations: {', '.join(citations)}"
+        else:
+            doc_summaries = "\n".join([f"- [{d['doc_id']}] {d['title']}: {d['summary']}" for d in docs])
+            response_text = f"Payer Policy Analysis (Extractive Grounded RAG):\n{doc_summaries}\n\nCitations: {', '.join(citations)}"
+
         return {
             "agent_id": self.metadata.agent_id,
             "status": "SUCCESS",
+            "model_provider": provider_status,
             "response": response_text,
             "citation_ids": citations,
             "raw_data": result,
@@ -87,12 +162,22 @@ class ClinicalGrowthAgent:
             }
 
         citations = result["citation_ids"]
-        doc_summaries = "\n".join([f"- [{d['doc_id']}] {d['title']}: {d['summary']}" for d in result["documents"]])
-        
-        response_text = f"Clinical Practice Guidance:\n{doc_summaries}\n\nCitations: {', '.join(citations)}"
+        docs = result["documents"]
+
+        # Attempt Gemini 3.5 Flash Inference
+        sys_inst = "You are the Clinical & Growth Agent. Answer using permitted clinical guidelines and cite Document IDs."
+        gemini_text, provider_status = call_gemini_inference(query, sys_inst, docs)
+
+        if gemini_text:
+            response_text = f"Clinical Practice Guidance (Gemini 3.5 Flash):\n{gemini_text}\n\nCitations: {', '.join(citations)}"
+        else:
+            doc_summaries = "\n".join([f"- [{d['doc_id']}] {d['title']}: {d['summary']}" for d in docs])
+            response_text = f"Clinical Practice Guidance (Extractive Grounded RAG):\n{doc_summaries}\n\nCitations: {', '.join(citations)}"
+
         return {
             "agent_id": self.metadata.agent_id,
             "status": "SUCCESS",
+            "model_provider": provider_status,
             "response": response_text,
             "citation_ids": citations,
             "raw_data": result,
