@@ -1,0 +1,68 @@
+name: payer-clinical-agents
+version: 0.1.0
+description: Two governed AI agents (Payer Intelligence + Clinical & Growth) over one auditable RAG layer
+track: The Fortified Enterprise Fleet Track (All Things Agentic Hackathon)
+framework: Google Agent Development Kit (ADK) + Gemini
+
+runtime:
+  python_version: ">=3.11"
+  entrypoint: app.routes:app
+  port: 8080
+
+agents:
+  - id: payer_intelligence
+    name: Payer Intelligence Agent
+    version: 1.2.0
+    domain: payer
+    description: Coverage determinations, CPT/ICD-10 coding rules, fee schedules, denial management, prior auth queueing.
+    tools:
+      - query_payer_policies
+      - analyze_denial_reasons
+      - verify_coverage_eligibility
+      - queue_prior_auth_request
+    allowed_roles:
+      - payer_admin
+      - claims_specialist
+      - medical_director
+
+  - id: clinical_growth
+    name: Clinical & Growth Agent
+    version: 1.2.0
+    domain: clinical
+    description: ACC/AHA clinical practice guidelines, quality care gaps (HEDIS/mIPS), clinical growth outreach.
+    tools:
+      - query_clinical_guidelines
+      - evaluate_care_gaps
+      - summarize_clinical_history
+      - queue_growth_initiative
+    allowed_roles:
+      - clinician
+      - growth_lead
+      - medical_director
+
+  - id: coordinator
+    name: Fleet Coordinator Agent
+    version: 1.0.0
+    domain: cross_domain
+    description: Intent routing and cross-domain identity propagation.
+    tools:
+      - route_query
+
+a2a_protocol:
+  enabled: true
+  spec_version: 0.2.0
+  agent_card_url: /.well-known/agent.json
+  inspector_compatible: true
+
+governance:
+  rbac:
+    enforcement: server_derived_identity
+    sql_pre_filtering: true
+  approvals:
+    isolated_human_gate: true
+    endpoints:
+      approve: /fleet/approvals/{id}/approve
+      send: /fleet/approvals/{id}/send
+  telemetry:
+    opentelemetry: true
+    audit_log: append_only_db
