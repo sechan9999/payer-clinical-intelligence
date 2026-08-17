@@ -120,18 +120,18 @@ def run_benchmark():
         passed_count += 1
         print("  [OK] Gate Test 4a Passed: Draft correctly queued in PENDING state.")
 
-    # 4b. Premature dispatch refusal
+    # 4b. Premature dispatch refusal (HTTP 409 Conflict)
     spec_ident = derive_identity("tok-claims-spec")
-    disp_ok, _ = dispatch_action(appr_id, spec_ident, store=db)
+    disp_ok, _, http_code = dispatch_action(appr_id, spec_ident, store=db)
     if not disp_ok:
         gate_passes += 1
         passed_count += 1
         print("  [OK] Gate Test 4b Passed: Premature dispatch correctly refused.")
 
-    # 4c. Supervisor approval & dispatch
+    # 4c. Supervisor approval & dispatch (HTTP 200 OK)
     dir_ident = derive_identity("tok-medical-director")
     appr_ok, _ = approve_action(appr_id, dir_ident, store=db)
-    final_ok, _ = dispatch_action(appr_id, dir_ident, store=db)
+    final_ok, _, final_http = dispatch_action(appr_id, dir_ident, store=db)
     if appr_ok and final_ok:
         gate_passes += 1
         passed_count += 1
