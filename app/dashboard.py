@@ -1,9 +1,19 @@
+import sys
+from pathlib import Path
 import json
 import os
-import sys
 import time
 from typing import Dict, List, Optional
 import streamlit as st
+
+# System Path Resolution for Streamlit Cloud & Standalone Deployment
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+APP_DIR = Path(__file__).resolve().parent
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
 
 # Page Configuration
 st.set_page_config(
@@ -80,14 +90,23 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Imports from app
-from app.agent import get_root_agent
-from app.approvals import approve_action, dispatch_action
-from app.config import check_runtime_environment
-from app.domain import ApprovalStatus, DomainDomain, UserRole
-from app.identity import DEMO_TOKENS, derive_identity
-from app.registry import get_agent_registry
-from app.store import get_store
+# Safe Imports from app with fallback
+try:
+    from app.agent import get_root_agent
+    from app.approvals import approve_action, dispatch_action
+    from app.config import check_runtime_environment
+    from app.domain import ApprovalStatus, DomainDomain, UserRole
+    from app.identity import DEMO_TOKENS, derive_identity
+    from app.registry import get_agent_registry
+    from app.store import get_store
+except ImportError:
+    from agent import get_root_agent
+    from approvals import approve_action, dispatch_action
+    from config import check_runtime_environment
+    from domain import ApprovalStatus, DomainDomain, UserRole
+    from identity import DEMO_TOKENS, derive_identity
+    from registry import get_agent_registry
+    from store import get_store
 
 db = get_store()
 agent = get_root_agent()
@@ -278,7 +297,10 @@ with tab_approvals:
             submit_draft = st.form_submit_button("Queue Draft for Approval")
             
             if submit_draft:
-                from app.tools import queue_prior_auth_request
+                try:
+                    from app.tools import queue_prior_auth_request
+                except ImportError:
+                    from tools import queue_prior_auth_request
                 res = queue_prior_auth_request(cpt, icd10, rationale, current_identity, store=db)
                 if res.get("success"):
                     st.success(f"✅ Draft queued successfully! Approval ID: `{res.get('approval_id')}` (FHIR Bundle ID: `{res.get('fhir_bundle_id')}`)")
