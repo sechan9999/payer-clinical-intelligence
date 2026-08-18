@@ -119,10 +119,10 @@ st.sidebar.info(f"**Role**: `{current_identity.role.value}`\n\n**Allowed Domains
 st.sidebar.markdown("---")
 st.sidebar.markdown("### ⚙️ Runtime Status")
 runtime_info = check_runtime_environment()
-st.sidebar.text(f"GCP Project: {runtime_info['gcp_project'] or 'Offline Local'}")
-st.sidebar.text(f"Model Provider: {runtime_info['model_provider']}")
-st.sidebar.text(f"DB Engine: {runtime_info['database_engine']}")
-st.sidebar.text(f"Guardrail: {runtime_info['guardrail_backend']}")
+st.sidebar.text(f"GCP Project: {runtime_info.get('gcp_project', 'Offline Local')}")
+st.sidebar.text(f"Model Provider: {runtime_info.get('model_provider', 'Gemini 3.5')}")
+st.sidebar.text(f"DB Engine: {runtime_info.get('database_engine', runtime_info.get('database_backend', 'SQLite'))}")
+st.sidebar.text(f"Guardrail: {runtime_info.get('guardrail_backend', runtime_info.get('model_armor_status', 'Heuristic Fallback'))}")
 
 # Header
 st.markdown('<div class="main-header">Gemini Ops Fleet · Clinical Ledger</div>', unsafe_allow_html=True)

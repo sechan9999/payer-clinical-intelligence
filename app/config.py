@@ -53,6 +53,8 @@ def check_runtime_environment() -> Dict:
         "has_gcp_credentials": has_gcp_creds,
         "model_provider": "gemini-3.5-flash (Vertex AI)" if has_gcp_creds else "extractive_rag_fallback (Offline)",
         "database_backend": "Cloud SQL Postgres" if instance_conn else "SQLite (Local/Memory)",
+        "database_engine": "Cloud SQL Postgres" if instance_conn else "SQLite (Local/Memory)",
         "model_armor_status": "Vertex AI Model Armor" if has_gcp_creds else "Heuristic Guardrail Fallback",
+        "guardrail_backend": "Vertex AI Model Armor" if has_gcp_creds else "Heuristic Guardrail Fallback",
         "a2a_protocol_status": "Published (/.well-known/agent.json)",
     }
