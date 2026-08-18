@@ -1,29 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "payer-clinical-agents"
+name = "gemini-ops-fleet"
 version = "0.1.0"
-description = "Two governed AI agents (Payer Intelligence + Clinical & Growth) over one auditable RAG layer"
+description = "Governed multi-agent back-office fleet on Gemini 3.5 + ADK over an auditable RAG layer for Healthcare Payer & Clinical workflows."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
-    "fastapi>=0.109.0",
-    "uvicorn>=0.27.0",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.28.0",
     "pydantic>=2.6.0",
-    "sqlalchemy>=2.0.0",
-    "opentelemetry-api>=1.22.0",
+    "streamlit>=1.32.0",
     "google-genai>=0.1.0",
-    "streamlit>=1.31.0",
+    "opentelemetry-api>=1.22.0",
+    "opentelemetry-sdk>=1.22.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
-    "httpx>=0.26.0",
+    "httpx>=0.27.0",
 ]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
@@ -31,4 +31,3 @@ packages = ["app"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
-python_files = ["test_*.py"]

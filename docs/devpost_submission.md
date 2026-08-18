@@ -1,4 +1,4 @@
-# Governed Payer Clinical Intelligence Fleet
+# Gemini Ops Fleet (Healthcare Intelligence Edition)
 
 ## Inspiration
 
@@ -12,13 +12,21 @@ So we inverted the pitch. This project is not interesting because the agents are
 
 ## What it does
 
-Payer Clinical Intelligence Fleet is a governed multi-agent intelligence system running off a shared event stream and auditable RAG layer over Payer policies and Clinical guidelines.
+Gemini Ops Fleet is a governed multi-agent intelligence system running off a shared event stream and auditable RAG layer over Payer policies and Clinical guidelines.
 
 - **Payer Intelligence** analyzes coverage rules, CPT 75561 criteria, fee schedules, denial appeal strategies, and queues prior auth drafts (`drafts_only`).
 - **Clinical & Growth** analyzes ACC/AHA guidelines, HEDIS care gaps, care pathways, and queues outreach initiatives (`drafts_only`).
 - **Fleet Coordinator** routes cross-domain queries while passing down server-derived user identity (`read_only`).
 
-A business change writes its record and an `Activity` event in the same transaction. That event goes to Pub/Sub, gets pushed to the service, and the agent that owns that event type picks it up. Nobody is waiting at a prompt.
+A business event — such as an incoming claim denial (`CLAIM_DENIED`) — writes its record and an `Activity` event in the same transaction. That event goes to Pub/Sub, gets pushed to the service, and the agent that owns that event type picks it up. Nobody is waiting at a prompt.
+
+**The Compelling Vertical Scenario:**
+1. A claim denial event (`CO-50`, Claim `CLM-9921`) arrives on the event stream.
+2. The **Payer Intelligence Agent** receives the event and queries permitted policy documents via SQL pre-filtering (`PAY-POL-101`).
+3. The agent drafts a formal prior-authorization / appeal package (`drafts_only`).
+4. The package is queued in the isolated Human Approval Gate (`PENDING`).
+5. An attempted premature dispatch by an unapproved caller returns **HTTP 409 Conflict**.
+6. The Medical Director inspects the packet in the Streamlit dashboard and approves dispatch via HTTP.
 
 Three guarantees hold regardless of what anyone types:
 
@@ -70,7 +78,7 @@ We kept one rule throughout: **the whole system runs offline with no credentials
 
 **Write the offline path first.** Making the entire system runnable without credentials was not a testing convenience — it forced every cloud dependency behind a port, which is why swapping the LLM provider, database engine, and guardrail backend each turned out to be a one-file change.
 
-## What's next for Payer Clinical Intelligence Fleet
+## What's next for Gemini Ops Fleet
 
 **FHIR / EHR Interoperability.** Bind HL7 FHIR API connectors for live EHR clinical chart retrieval behind the SQL RBAC boundary.
 
@@ -78,4 +86,4 @@ We kept one rule throughout: **the whole system runs offline with no credentials
 
 **Split an agent across a process boundary.** Currently, agents run as sub-agents in one service. Deploying `payer_intelligence` as its own standalone A2A microservice will let Payer IT own its deployment independently from Clinical networks.
 
-**Live EHR Approval Webhooks.** Expand the Streamlit Approval Queue (`https://payer-clinical-intelligence.streamlit.app/`) into automated EHR inbox webhooks for Medical Directors.
+**Live EHR Approval Webhooks.** Expand the Streamlit Approval Queue ([https://payer-clinical-intelligence.streamlit.app/](https://payer-clinical-intelligence.streamlit.app/)) into automated EHR inbox webhooks for Medical Directors.
