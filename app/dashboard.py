@@ -168,13 +168,15 @@ with tab_ledger:
     registry = get_agent_registry()
     reg_data = []
     for a in registry:
+        domain_obj = getattr(a, "domain", getattr(a, "primary_domain", DomainDomain.CROSS_DOMAIN))
+        domain_str = domain_obj.value if hasattr(domain_obj, "value") else str(domain_obj)
         reg_data.append({
             "Agent ID": a.agent_id,
-            "Display Name": a.display_name,
+            "Display Name": getattr(a, "display_name", getattr(a, "name", a.agent_id)),
             "Version": a.version,
-            "Domain": a.domain.value,
+            "Domain": domain_str,
             "Autonomy Grade": a.autonomy_grade.value.upper(),
-            "Declared Capabilities": ", ".join(a.declared_capabilities),
+            "Declared Capabilities": ", ".join(getattr(a, "declared_capabilities", getattr(a, "tools", []))),
             "Declared Restrictions": ", ".join(a.restrictions),
         })
     st.dataframe(reg_data, use_container_width=True)

@@ -14,6 +14,18 @@ class AgentMetadata(BaseModel):
     tools: List[str]
     restrictions: List[str]
 
+    @property
+    def display_name(self) -> str:
+        return self.name
+
+    @property
+    def domain(self) -> DomainDomain:
+        return self.primary_domain
+
+    @property
+    def declared_capabilities(self) -> List[str]:
+        return self.tools
+
 
 AGENT_REGISTRY: Dict[str, AgentMetadata] = {
     "payer_intelligence": AgentMetadata(
