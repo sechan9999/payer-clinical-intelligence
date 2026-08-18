@@ -46,6 +46,9 @@ DEV_TOKEN_MAP: Dict[str, UserIdentity] = {
     ),
 }
 
+# Alias for dashboard compatibility
+DEMO_TOKENS = DEV_TOKEN_MAP
+
 
 def derive_identity(token: Optional[str] = None, fleet_token: Optional[str] = None) -> UserIdentity:
     """

@@ -90,23 +90,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Safe Imports from app with fallback
-try:
-    from app.agent import get_root_agent
-    from app.approvals import approve_action, dispatch_action
-    from app.config import check_runtime_environment
-    from app.domain import ApprovalStatus, DomainDomain, UserRole
-    from app.identity import DEMO_TOKENS, derive_identity
-    from app.registry import get_agent_registry
-    from app.store import get_store
-except ImportError:
-    from agent import get_root_agent
-    from approvals import approve_action, dispatch_action
-    from config import check_runtime_environment
-    from domain import ApprovalStatus, DomainDomain, UserRole
-    from identity import DEMO_TOKENS, derive_identity
-    from registry import get_agent_registry
-    from store import get_store
+# Imports from app
+from app.agent import get_root_agent
+from app.approvals import approve_action, dispatch_action
+from app.config import check_runtime_environment
+from app.domain import ApprovalStatus, DomainDomain, UserRole
+from app.identity import DEMO_TOKENS, DEV_TOKEN_MAP, derive_identity
+from app.registry import get_agent_registry
+from app.store import get_store
 
 db = get_store()
 agent = get_root_agent()
