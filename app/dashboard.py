@@ -109,7 +109,7 @@ st.sidebar.markdown("## 🛡️ Governance Persona")
 token_option = st.sidebar.selectbox(
     "Select X-Fleet-Token Header Persona:",
     options=list(DEMO_TOKENS.keys()),
-    format_func=lambda k: f"{DEMO_TOKENS[k]['name']} ({DEMO_TOKENS[k]['role'].value})"
+    format_func=lambda k: f"{DEMO_TOKENS[k].name} ({DEMO_TOKENS[k].role.value})"
 )
 
 current_identity = derive_identity(token_option)
