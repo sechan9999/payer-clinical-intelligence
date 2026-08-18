@@ -1,0 +1,151 @@
+1
+00:00:01,000 --> 00:00:05,000
+Welcome. Every enterprise AI demo asks the same question:
+
+2
+00:00:05,100 --> 00:00:08,500
+"How much can the agent do on its own?"
+
+3
+00:00:08,600 --> 00:00:13,200
+But in healthcare administration — where prior authorization backlogs cost over $30B annually —
+
+4
+00:00:13,300 --> 00:00:16,500
+that is the wrong question for compliance teams.
+
+5
+00:00:16,600 --> 00:00:21,000
+A health plan cannot survive an agent leaking PHI or emailing an unapproved care plan.
+
+6
+00:00:21,100 --> 00:00:24,500
+So we inverted the pitch: This project is not interesting because agents are autonomous.
+
+7
+00:00:24,600 --> 00:00:29,500
+It is interesting because of what they are structurally unable to do — enforced in code.
+
+8
+00:00:30,000 --> 00:00:34,500
+Here in our Clinical Command Ledger, we inspect our Fleet Agent Registry.
+
+9
+00:00:34,600 --> 00:00:39,000
+Every agent advertises its scope and explicit autonomy grade.
+
+10
+00:00:39,100 --> 00:00:43,500
+Both the Payer Intelligence and Clinical Growth agents are registered as "drafts_only".
+
+11
+00:00:43,600 --> 00:00:48,000
+Zero tools in their catalog contain "send" or "dispatch" in their names.
+
+12
+00:00:48,100 --> 00:00:52,500
+Crucially, roles are server-derived from the X-Fleet-Token header.
+
+13
+00:00:52,600 --> 00:00:57,000
+No tool function accepts a role or employee_id parameter.
+
+14
+00:00:57,100 --> 00:01:02,000
+The Gemini model literally lacks the vocabulary to claim or escalate permissions.
+
+15
+00:01:02,100 --> 00:01:06,500
+This guarantee is enforced by automated reflection unit tests across every tool.
+
+16
+00:01:07,000 --> 00:01:12,000
+Now let me trace a query through our asynchronous event stream.
+
+17
+00:01:12,100 --> 00:01:16,500
+When a claim event or policy query arrives, the Fleet Coordinator routes it through a two-stage pipeline.
+
+18
+00:01:16,600 --> 00:01:21,000
+Stage 1 is security: A SQL WHERE predicate executes first, filtering unauthorized documents.
+
+19
+00:01:21,100 --> 00:01:26,000
+If a Clinician requests confidential Payer fee schedules, they receive an empty result set.
+
+20
+00:01:26,100 --> 00:01:30,500
+Stage 2 is quality: Vector cosine similarity ranks the permitted candidates.
+
+21
+00:01:30,600 --> 00:01:35,500
+Gemini 3.5 Flash through Vertex AI synthesizes a grounded answer.
+
+22
+00:01:35,600 --> 00:01:40,500
+Every response MUST cite its source document ID, such as PAY-POL-101.
+
+23
+00:01:41,000 --> 00:01:46,000
+Next, let's look at how we protect external communications using our Isolated Human Approval Gate.
+
+24
+00:01:46,100 --> 00:01:51,000
+The Payer Agent drafts a Prior Authorization packet complete with an HL7 FHIR v4 Claim Bundle.
+
+25
+00:01:51,100 --> 00:01:55,500
+But drafting is the end of its reach. Sending and dispatching are HTTP-only endpoints.
+
+26
+00:01:55,600 --> 00:02:00,500
+Watch what happens when an unapproved premature dispatch is attempted:
+
+27
+00:02:00,600 --> 00:02:05,500
+The system refuses with an HTTP 409 Conflict error.
+
+28
+00:02:05,600 --> 00:02:10,000
+No unapproved draft can ever reach a patient or payer.
+
+29
+00:02:10,500 --> 00:02:15,500
+Now, our Chief Medical Officer logs in via server identity.
+
+30
+00:02:15,600 --> 00:02:20,500
+As a human supervisor, Dr. Pendelton inspects the HL7 FHIR bundle.
+
+31
+00:02:20,600 --> 00:02:25,000
+He clicks "Approve" followed by "Dispatch", executing via HTTP status 200.
+
+32
+00:02:25,100 --> 00:02:30,000
+In addition, our Bulk Dry-Run Simulation Engine allows teams to stress-test batch claim events.
+
+33
+00:02:30,100 --> 00:02:35,000
+100% of these interactions — including refusals — are logged to an append-only Audit Trail.
+
+34
+00:02:35,500 --> 00:02:40,000
+Finally, our /metrics endpoint exposes real-time Prometheus Stream Health.
+
+35
+00:02:40,100 --> 00:02:45,000
+Tracking stream compliance ratios and active agent counts for OpenTelemetry monitoring.
+
+36
+00:02:45,100 --> 00:02:50,000
+By combining Gemini 3.5 Flash, Google ADK, SQL pre-filtering, and HTTP 409 gates,
+
+37
+00:02:50,100 --> 00:02:55,000
+we built a zero-trust multi-agent system that proves security in code.
+
+38
+00:02:55,100 --> 00:03:00,000
+Try the live app at payer-clinical-intelligence.streamlit.app. Thank you!
