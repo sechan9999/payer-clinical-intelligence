@@ -87,6 +87,20 @@ class ApprovalItem(BaseModel):
     approved_by: Optional[str] = None
     approved_at: Optional[str] = None
 
+    @property
+    def created_by_user(self) -> str:
+        return self.payload.get("created_by_user", "system_agent")
+
+    @property
+    def created_by_role(self) -> UserRole:
+        role_val = self.payload.get("created_by_role", UserRole.PAYER_ADMIN)
+        if isinstance(role_val, UserRole):
+            return role_val
+        try:
+            return UserRole(str(role_val))
+        except Exception:
+            return UserRole.PAYER_ADMIN
+
 
 class AuditLogEntry(BaseModel):
     audit_id: str
