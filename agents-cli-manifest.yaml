@@ -1,8 +1,8 @@
 version: "1.0"
 manifest_type: "a2a_agent_fleet"
-fleet_name: "gemini-ops-fleet"
-display_name: "Gemini Ops Fleet"
-description: "Governed multi-agent back-office fleet on Gemini 3.5 + ADK over an auditable RAG layer for Healthcare Payer & Clinical workflows."
+fleet_name: "payer-clinical-intelligence"
+display_name: "Payer Clinical Intelligence Fleet"
+description: "Two governed AI agents (Payer Intelligence + Clinical & Growth) over one auditable RAG layer — demo-scale, production-shaped."
 protocol_version: "0.2.0"
 
 agents:

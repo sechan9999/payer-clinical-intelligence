@@ -1,4 +1,4 @@
-# Gemini Ops Fleet (Healthcare Intelligence Edition)
+# Payer Clinical Intelligence Fleet
 
 ## Inspiration
 

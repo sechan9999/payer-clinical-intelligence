@@ -89,7 +89,7 @@ st.sidebar.markdown("---")
 st.sidebar.info("🔒 **Server-Derived Identity (`X-Fleet-Token`)**: Roles are strictly derived server-side. Zero model escalation possible.")
 
 # Main Header
-st.markdown('<div class="main-header">Gemini Ops Fleet</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">Governed Payer Clinical Intelligence Fleet</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">Governed Multi-Agent Back-Office Fleet for Healthcare Payer & Clinical Workflows (Gemini 3.5 + ADK Architecture)</div>', unsafe_allow_html=True)
 
 # Metrics Bar

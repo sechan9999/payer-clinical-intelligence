@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "gemini-ops-fleet"
+name = "payer-clinical-intelligence"
 version = "0.1.0"
-description = "Governed multi-agent back-office fleet on Gemini 3.5 + ADK over an auditable RAG layer for Healthcare Payer & Clinical workflows."
+description = "Two governed AI agents (Payer Intelligence + Clinical & Growth) over one auditable RAG layer — demo-scale, production-shaped."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
