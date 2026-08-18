@@ -8,6 +8,12 @@ resource "google_sql_database_instance" "fleet_db_instance" {
     ip_configuration {
       ipv4_enabled = true
     }
+
+    # Enable pgvector extension for Cloud SQL PostgreSQL vector embeddings search
+    database_flags {
+      name  = "cloudsql.enable_pgvector"
+      value = "on"
+    }
   }
   deletion_protection = false
 }

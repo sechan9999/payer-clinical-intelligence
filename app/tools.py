@@ -11,6 +11,7 @@ from app.domain import (
     UserIdentity,
     UserRole,
 )
+from app.fhir import build_fhir_care_gap_observation, build_fhir_prior_auth_bundle
 from app.retrieval import permitted_documents
 from app.store import DataStore, get_store
 
@@ -121,27 +122,44 @@ def verify_coverage_eligibility(cpt_code: str, icd10_code: str, user_identity: U
     }
 
 
-def queue_prior_auth_request(cpt_code: str, icd10_code: str, clinical_rationale: str, user_identity: UserIdentity, store: Optional[DataStore] = None) -> Dict:
+def queue_prior_auth_request(
+    cpt_code: str,
+    icd10_code: str,
+    clinical_rationale: str,
+    user_identity: UserIdentity,
+    patient_id_hash: str = "hash_pt_8841",
+    store: Optional[DataStore] = None
+) -> Dict:
     """
-    Drafts a prior authorization request and queues it for mandatory human supervisor sign-off.
+    Drafts a prior authorization request with an HL7 FHIR v4 Claim Bundle and queues it for mandatory human supervisor sign-off.
     Path is isolated from direct dispatch.
     """
     db = store or get_store()
     if user_identity.role not in [UserRole.PAYER_ADMIN, UserRole.CLAIMS_SPECIALIST, UserRole.MEDICAL_DIRECTOR]:
         return {"success": False, "error": f"Role '{user_identity.role.value}' cannot draft prior authorization requests."}
 
+    # Construct HL7 FHIR v4 Bundle for Prior Auth
+    fhir_bundle = build_fhir_prior_auth_bundle(
+        cpt_code=cpt_code,
+        icd10_code=icd10_code,
+        clinical_rationale=clinical_rationale,
+        patient_id_hash=patient_id_hash,
+        submitting_provider=user_identity.name
+    )
+
     payload = {
         "cpt_code": cpt_code,
         "icd10_code": icd10_code,
         "clinical_rationale": clinical_rationale,
         "submitted_by": user_identity.name,
+        "fhir_bundle": fhir_bundle,
     }
     
     approval_item = queue_for_human_approval(
         agent_id="payer_intelligence",
         action_type="PRIOR_AUTH_SUBMISSION",
         target_domain=DomainDomain.PAYER,
-        summary=f"Prior Auth Packet for CPT {cpt_code} (ICD-10 {icd10_code})",
+        summary=f"Prior Auth Packet (HL7 FHIR v4) for CPT {cpt_code} (ICD-10 {icd10_code})",
         payload=payload,
         actor_identity=user_identity,
         store=db
@@ -151,7 +169,8 @@ def queue_prior_auth_request(cpt_code: str, icd10_code: str, clinical_rationale:
         "success": True,
         "status": "QUEUED_FOR_HUMAN_APPROVAL",
         "approval_id": approval_item.approval_id,
-        "note": "Request has been safely queued in pending approvals state. Human supervisor sign-off required.",
+        "fhir_bundle_id": fhir_bundle["id"],
+        "note": "Request with HL7 FHIR v4 bundle queued safely in pending approvals state. Human supervisor sign-off required.",
     }
 
 
@@ -238,10 +257,13 @@ def evaluate_care_gaps(measure_filter: str, user_identity: UserIdentity, store: 
         guardrail_status="PASS"
     ))
 
+    fhir_obs = build_fhir_care_gap_observation("hash_pt_3312", measure_filter, "High")
+
     return {
         "success": True,
         "measure_filter": measure_filter,
         "care_gaps": [],
+        "fhir_observation": fhir_obs,
         "citation_ids": ["CLN-GROWTH-502"],
     }
 

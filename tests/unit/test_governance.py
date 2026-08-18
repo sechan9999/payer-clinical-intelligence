@@ -171,6 +171,29 @@ def test_human_approval_gate_lifecycle(test_db):
     assert http_status_ok == 200
 
 
+def test_fhir_interoperability_bundle_generation(test_db):
+    """
+    HL7 FHIR v4 INTEROPERABILITY ASSERTION:
+    Verifies that queueing a prior auth request constructs a compliant HL7 FHIR v4 Bundle.
+    """
+    claims_spec = derive_identity(token="tok-claims-spec")
+    res = tools_module.queue_prior_auth_request("75561", "I42.0", "Ischemic cardiomyopathy", claims_spec, store=test_db)
+    
+    assert res["success"]
+    assert "fhir_bundle_id" in res
+    
+    items = test_db.get_approval_items()
+    queued = next(i for i in items if i.approval_id == res["approval_id"])
+    fhir_bundle = queued.payload.get("fhir_bundle")
+    
+    assert fhir_bundle["resourceType"] == "Bundle"
+    assert len(fhir_bundle["entry"]) == 3
+    resource_types = [e["resource"]["resourceType"] for e in fhir_bundle["entry"]]
+    assert "Patient" in resource_types
+    assert "CoverageEligibilityRequest" in resource_types
+    assert "Claim" in resource_types
+
+
 def test_credential_redacting():
     dirty_url = "postgresql://user_admin:secret_pass_1234@localhost:5432/fleet_db"
     clean_url = redact_url_credentials(dirty_url)
