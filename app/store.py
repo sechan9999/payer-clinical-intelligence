@@ -1,7 +1,8 @@
+from datetime import datetime
 import json
 import sqlite3
-import uuid
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
+from app.config import get_database_urls
 from app.domain import (
     ActivityEvent,
     ApprovalItem,
@@ -16,111 +17,135 @@ from app.domain import (
 
 
 class DataStore:
-    def __init__(self, db_path: str = ":memory:"):
+    """
+    Unified Data Store supporting local SQLite storage and Cloud SQL PostgreSQL.
+    Stores documents, denial records, care gaps, approval queue items, and audit logs.
+    """
+
+    def __init__(self, db_path: str = "fleet.db"):
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
         self._init_db()
-        self._seed_data()
+
+    def _get_connection(self):
+        if self.db_path == ":memory:":
+            if not hasattr(self, "_mem_conn") or self._mem_conn is None:
+                self._mem_conn = sqlite3.connect(":memory:", check_same_thread=False)
+            return self._mem_conn
+        return sqlite3.connect(self.db_path)
 
     def _init_db(self):
-        with self.conn:
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS documents (
-                    doc_id TEXT PRIMARY KEY,
-                    title TEXT NOT NULL,
-                    domain TEXT NOT NULL,
-                    classification TEXT NOT NULL,
-                    required_roles TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    summary TEXT NOT NULL,
-                    cpt_codes TEXT,
-                    icd10_codes TEXT,
-                    effective_date TEXT
-                );
-            """)
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS denials (
-                    claim_id TEXT PRIMARY KEY,
-                    patient_id_hash TEXT NOT NULL,
-                    payer_name TEXT NOT NULL,
-                    denial_code TEXT NOT NULL,
-                    denial_reason TEXT NOT NULL,
-                    appeal_deadline TEXT NOT NULL,
-                    recommended_strategy TEXT NOT NULL,
-                    required_roles TEXT NOT NULL
-                );
-            """)
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS care_gaps (
-                    gap_id TEXT PRIMARY KEY,
-                    patient_id_hash TEXT NOT NULL,
-                    measure_name TEXT NOT NULL,
-                    clinical_priority TEXT NOT NULL,
-                    recommended_action TEXT NOT NULL,
-                    due_date TEXT NOT NULL,
-                    required_roles TEXT NOT NULL
-                );
-            """)
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS approvals (
-                    approval_id TEXT PRIMARY KEY,
-                    agent_id TEXT NOT NULL,
-                    action_type TEXT NOT NULL,
-                    target_domain TEXT NOT NULL,
-                    summary TEXT NOT NULL,
-                    payload TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    approved_by TEXT,
-                    approved_at TEXT
-                );
-            """)
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS audit_logs (
-                    audit_id TEXT PRIMARY KEY,
-                    timestamp TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
-                    user_role TEXT NOT NULL,
-                    agent_id TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    domain TEXT NOT NULL,
-                    access_granted INTEGER NOT NULL,
-                    denial_reason TEXT,
-                    query_summary TEXT NOT NULL,
-                    documents_accessed TEXT NOT NULL,
-                    guardrail_status TEXT NOT NULL
-                );
-            """)
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS activities (
-                    event_id TEXT PRIMARY KEY,
-                    event_type TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    domain TEXT NOT NULL,
-                    actor_role TEXT NOT NULL,
-                    details TEXT NOT NULL
-                );
-            """)
+        conn = self._get_connection()
+        cursor = conn.cursor()
 
-    def _seed_data(self):
-        # Check if already seeded
-        cursor = self.conn.cursor()
+        # Documents table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS documents (
+                doc_id TEXT PRIMARY KEY,
+                title TEXT,
+                domain TEXT,
+                classification TEXT,
+                required_roles TEXT,
+                content TEXT,
+                summary TEXT,
+                cpt_codes TEXT,
+                icd10_codes TEXT,
+                effective_date TEXT
+            )
+        """)
+
+        # Denial records table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS denial_records (
+                claim_id TEXT PRIMARY KEY,
+                patient_id_hash TEXT,
+                payer_name TEXT,
+                denial_code TEXT,
+                denial_reason TEXT,
+                appeal_deadline TEXT,
+                recommended_strategy TEXT,
+                required_roles TEXT
+            )
+        """)
+
+        # Care gap records table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS care_gaps (
+                gap_id TEXT PRIMARY KEY,
+                patient_id_hash TEXT,
+                measure_name TEXT,
+                clinical_priority TEXT,
+                recommended_action TEXT,
+                due_date TEXT,
+                required_roles TEXT
+            )
+        """)
+
+        # Approval items table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS approval_queue (
+                approval_id TEXT PRIMARY KEY,
+                agent_id TEXT,
+                action_type TEXT,
+                target_domain TEXT,
+                summary TEXT,
+                payload TEXT,
+                status TEXT,
+                created_at TEXT,
+                approved_by TEXT,
+                approved_at TEXT
+            )
+        """)
+
+        # Audit logs table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                audit_id TEXT PRIMARY KEY,
+                timestamp TEXT,
+                user_id TEXT,
+                user_role TEXT,
+                agent_id TEXT,
+                action TEXT,
+                domain TEXT,
+                access_granted INTEGER,
+                denial_reason TEXT,
+                query_summary TEXT,
+                documents_accessed TEXT,
+                guardrail_status TEXT
+            )
+        """)
+
+        # Activity events stream
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS activity_events (
+                event_id TEXT PRIMARY KEY,
+                event_type TEXT,
+                timestamp TEXT,
+                domain TEXT,
+                actor_role TEXT,
+                details TEXT
+            )
+        """)
+
+        conn.commit()
+
+        # Seed mock database if empty
         cursor.execute("SELECT COUNT(*) FROM documents")
-        if cursor.fetchone()[0] > 0:
-            return
+        if cursor.fetchone()[0] == 0:
+            self._seed_mock_data(conn)
 
-        documents = [
-            # Payer Policies
+    def _seed_mock_data(self, conn):
+        cursor = conn.cursor()
+
+        docs = [
             DocumentRecord(
                 doc_id="PAY-POL-101",
-                title="Commercial Prior Authorization Policy for Cardiac MRI",
+                title="Commercial Prior Auth Guidelines for Advanced Cardiac Imaging",
                 domain=DomainDomain.PAYER,
                 classification="internal_payer",
                 required_roles=[UserRole.PAYER_ADMIN, UserRole.CLAIMS_SPECIALIST, UserRole.MEDICAL_DIRECTOR],
-                content="Prior authorization for Cardiac MRI (CPT 75561) requires documentation of inconclusive Echocardiogram (CPT 93306), symptoms of cardiomyopathy, or suspect myocardial ischemia. Pre-certification valid for 60 days.",
-                summary="Cardiac MRI prior auth rules: requires non-diagnostic Echo, specific ICD-10 I42.0.",
-                cpt_codes=["75561", "93306"],
+                content="Prior authorization for Cardiac MRI (CPT 75561) requires documented echocardiogram within 90 days demonstrating LVEF < 40% or inconclusive valvular assessment. Exclusions apply for acute STEMI.",
+                summary="Cardiac MRI CPT 75561 prior authorization coverage criteria.",
+                cpt_codes=["75561", "75562"],
                 icd10_codes=["I42.0", "I50.9"],
             ),
             DocumentRecord(
@@ -129,215 +154,252 @@ class DataStore:
                 domain=DomainDomain.PAYER,
                 classification="confidential_rates",
                 required_roles=[UserRole.PAYER_ADMIN, UserRole.MEDICAL_DIRECTOR],
-                content="CONFIDENTIAL: Tier 1 Network reimbursement for Cardiac MRI (75561) set at $1,450. Out-of-network allowable capped at 140% of CMS Medicare base rate ($580). Shared savings target: 5% reduction in unapproved outpatient imaging.",
-                summary="Confidential Payer fee schedule for 75561 ($1,450 contracted rate). Restrict to Payer Admin.",
-                cpt_codes=["75561"],
+                content="Confidential contracted rate table: CPT 75561 baseline reimbursement $1,420.00. CPT 93458 Coronary Angiography reimbursement $3,150.00. Rates restricted to Payer Executive Contracting.",
+                summary="Confidential contracted reimbursement rates for cardiology procedures.",
+                cpt_codes=["75561", "93458"],
                 icd10_codes=[],
             ),
-            DocumentRecord(
-                doc_id="PAY-DEN-303",
-                title="Medicare Advantage Claim Denial Resolution Guide",
-                domain=DomainDomain.PAYER,
-                classification="internal_payer",
-                required_roles=[UserRole.PAYER_ADMIN, UserRole.CLAIMS_SPECIALIST, UserRole.MEDICAL_DIRECTOR],
-                content="Denial Code CO-50 (Non-covered medical necessity): Appeal must include Physician Attestation within 30 calendar days. Denial Code OA-197 (Pre-cert missing): Retroactive auth allowed only if emergent.",
-                summary="Denial code CO-50 and OA-197 resolution steps and appeal deadlines.",
-                cpt_codes=[],
-                icd10_codes=[],
-            ),
-            # Clinical Guidelines
             DocumentRecord(
                 doc_id="CLN-GUIDE-401",
                 title="ACC/AHA Clinical Practice Guideline for Heart Failure Management",
                 domain=DomainDomain.CLINICAL,
                 classification="clinical_restricted",
                 required_roles=[UserRole.CLINICIAN, UserRole.GROWTH_LEAD, UserRole.MEDICAL_DIRECTOR],
-                content="Class I Recommendation: Patients with HFrEF (LVEF <= 40%) should receive GDMT including SGLT2 inhibitors, ARNI/ACEi, Beta-Blockers, and MRAs to reduce mortality and hospitalization risk.",
-                summary="Clinical HF guidelines: GDMT quartet regimen for LVEF <= 40%.",
-                cpt_codes=["99214", "99215"],
-                icd10_codes=["I50.22", "I50.42"],
+                content="Guideline-directed medical therapy (GDMT) for HFrEF includes ARNI/ACEi/ARB, beta-blocker, MRA, and SGLT2i. Cardiac MRI is recommended (Class 1, LOE B) for evaluating myocardial viability prior to revascularization.",
+                summary="ACC/AHA Guideline recommendations for GDMT and myocardial viability imaging.",
+                cpt_codes=["75561"],
+                icd10_codes=["I50.22", "I50.9"],
             ),
             DocumentRecord(
                 doc_id="CLN-GROWTH-502",
-                title="Clinical Care Gap & Service Line Growth Playbook 2026",
+                title="Clinical Growth Initiative: Diabetes & Heart Failure Care Gap Protocol",
                 domain=DomainDomain.CLINICAL,
                 classification="clinical_restricted",
-                required_roles=[UserRole.GROWTH_LEAD, UserRole.CLINICIAN, UserRole.MEDICAL_DIRECTOR],
-                content="Growth Opportunity: 32% of patients with Type 2 Diabetes (E11.9) lack annual HbA1c screening or Nephropathy screening (CPT 83036). Outreach campaign expected to improve HEDIS score from 3 stars to 4.5 stars.",
-                summary="Quality care gap strategy for Diabetes screening and HEDIS rating boost.",
-                cpt_codes=["83036", "82570"],
-                icd10_codes=["E11.9"],
+                required_roles=[UserRole.CLINICIAN, UserRole.GROWTH_LEAD, UserRole.MEDICAL_DIRECTOR],
+                content="Population health outreach for HEDIS-HbA1c care gaps. Patients with HbA1c > 9.0% and concurrent HFrEF qualify for home SGLT2i medication titration and telehealth nurse navigation.",
+                summary="Population health growth outreach protocol for HEDIS HbA1c & Heart Failure care gaps.",
+                cpt_codes=[],
+                icd10_codes=["E11.9", "I50.9"],
             ),
         ]
 
-        with self.conn:
-            for doc in documents:
-                self.conn.execute("""
-                    INSERT INTO documents (doc_id, title, domain, classification, required_roles, content, summary, cpt_codes, icd10_codes, effective_date)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    doc.doc_id, doc.title, doc.domain.value, doc.classification,
-                    json.dumps([r.value for r in doc.required_roles]),
-                    doc.content, doc.summary, json.dumps(doc.cpt_codes),
-                    json.dumps(doc.icd10_codes), doc.effective_date
-                ))
+        for d in docs:
+            cursor.execute(
+                """INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    d.doc_id,
+                    d.title,
+                    d.domain.value,
+                    d.classification,
+                    json.dumps([r.value for r in d.required_roles]),
+                    d.content,
+                    d.summary,
+                    json.dumps(d.cpt_codes),
+                    json.dumps(d.icd10_codes),
+                    d.effective_date,
+                ),
+            )
 
-            # Seed Denials
-            self.conn.execute("""
-                INSERT INTO denials (claim_id, patient_id_hash, payer_name, denial_code, denial_reason, appeal_deadline, recommended_strategy, required_roles)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                "CLM-9921", "hash_pt_8821", "Aetna Health", "CO-50",
-                "Lack of Medical Necessity documentation for CPT 75561", "2026-09-15",
-                "Submit Echocardiogram report showing EF=35% and Attestation of failure on Echo",
-                json.dumps([UserRole.PAYER_ADMIN.value, UserRole.CLAIMS_SPECIALIST.value, UserRole.MEDICAL_DIRECTOR.value])
-            ))
+        # Seed sample denial
+        denial = DenialRecord(
+            claim_id="CLM-9921",
+            patient_id_hash="hash_pt_8841",
+            payer_name="Apex Health Plan",
+            denial_code="CO-50",
+            denial_reason="Non-covered procedure code / Lack of documented prior authorization",
+            appeal_deadline="2026-09-30",
+            recommended_strategy="Submit peer-to-peer review with prior Echocardiogram LVEF report referencing PAY-POL-101 section 3.",
+        )
+        cursor.execute(
+            """INSERT INTO denial_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                denial.claim_id,
+                denial.patient_id_hash,
+                denial.payer_name,
+                denial.denial_code,
+                denial.denial_reason,
+                denial.appeal_deadline,
+                denial.recommended_strategy,
+                json.dumps([r.value for r in denial.required_roles]),
+            ),
+        )
 
-            # Seed Care Gaps
-            self.conn.execute("""
-                INSERT INTO care_gaps (gap_id, patient_id_hash, measure_name, clinical_priority, recommended_action, due_date, required_roles)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                "GAP-4401", "hash_pt_3312", "HEDIS-HbA1c-Control", "High",
-                "Order HbA1c lab kit and schedule Nurse Practitioner Telehealth Consult", "2026-08-30",
-                json.dumps([UserRole.CLINICIAN.value, UserRole.GROWTH_LEAD.value, UserRole.MEDICAL_DIRECTOR.value])
-            ))
+        conn.commit()
 
-    def get_documents_by_roles(self, allowed_roles: List[UserRole], domain_filter: Optional[DomainDomain] = None) -> List[DocumentRecord]:
-        role_strings = set(r.value for r in allowed_roles)
-        cursor = self.conn.cursor()
-        
-        if domain_filter:
-            cursor.execute("SELECT * FROM documents WHERE domain = ?", (domain_filter.value,))
-        else:
-            cursor.execute("SELECT * FROM documents")
+    def get_documents_by_roles(self, roles: List[UserRole]) -> List[DocumentRecord]:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM documents")
+        rows = cursor.fetchall()
 
-        results = []
-        for row in cursor.fetchall():
-            required_roles = set(json.loads(row["required_roles"]))
-            # Check if user's roles intersect with document's required roles
-            if required_roles.intersection(role_strings):
-                results.append(DocumentRecord(
-                    doc_id=row["doc_id"],
-                    title=row["title"],
-                    domain=DomainDomain(row["domain"]),
-                    classification=row["classification"],
-                    required_roles=[UserRole(r) for r in json.loads(row["required_roles"])],
-                    content=row["content"],
-                    summary=row["summary"],
-                    cpt_codes=json.loads(row["cpt_codes"]),
-                    icd10_codes=json.loads(row["icd10_codes"]),
-                    effective_date=row["effective_date"]
-                ))
-        return results
+        role_vals = [r.value for r in roles]
+        permitted = []
+        for r in rows:
+            req_roles = json.loads(r[4])
+            if any(role in req_roles for role in role_vals):
+                permitted.append(
+                    DocumentRecord(
+                        doc_id=r[0],
+                        title=r[1],
+                        domain=DomainDomain(r[2]),
+                        classification=r[3],
+                        required_roles=[UserRole(role_str) for role_str in req_roles],
+                        content=r[5],
+                        summary=r[6],
+                        cpt_codes=json.loads(r[7]),
+                        icd10_codes=json.loads(r[8]),
+                        effective_date=r[9],
+                    )
+                )
+        return permitted
 
     def add_approval_item(self, item: ApprovalItem):
-        with self.conn:
-            self.conn.execute("""
-                INSERT INTO approvals (approval_id, agent_id, action_type, target_domain, summary, payload, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                item.approval_id, item.agent_id, item.action_type,
-                item.target_domain.value, item.summary, json.dumps(item.payload),
-                item.status.value, item.created_at
-            ))
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO approval_queue VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                item.approval_id,
+                item.agent_id,
+                item.action_type,
+                item.target_domain.value,
+                item.summary,
+                json.dumps(item.payload),
+                item.status.value,
+                item.created_at,
+                item.approved_by,
+                item.approved_at,
+            ),
+        )
+        conn.commit()
 
     def get_approval_items(self, status: Optional[ApprovalStatus] = None) -> List[ApprovalItem]:
-        cursor = self.conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
         if status:
-            cursor.execute("SELECT * FROM approvals WHERE status = ?", (status.value,))
+            cursor.execute("SELECT * FROM approval_queue WHERE status = ?", (status.value,))
         else:
-            cursor.execute("SELECT * FROM approvals")
-        
+            cursor.execute("SELECT * FROM approval_queue")
+        rows = cursor.fetchall()
+
         items = []
-        for row in cursor.fetchall():
-            items.append(ApprovalItem(
-                approval_id=row["approval_id"],
-                agent_id=row["agent_id"],
-                action_type=row["action_type"],
-                target_domain=DomainDomain(row["target_domain"]),
-                summary=row["summary"],
-                payload=json.loads(row["payload"]),
-                status=ApprovalStatus(row["status"]),
-                created_at=row["created_at"],
-                approved_by=row["approved_by"],
-                approved_at=row["approved_at"]
-            ))
+        for r in rows:
+            items.append(
+                ApprovalItem(
+                    approval_id=r[0],
+                    agent_id=r[1],
+                    action_type=r[2],
+                    target_domain=DomainDomain(r[3]),
+                    summary=r[4],
+                    payload=json.loads(r[5]),
+                    status=ApprovalStatus(r[6]),
+                    created_at=r[7],
+                    approved_by=r[8],
+                    approved_at=r[9],
+                )
+            )
         return items
 
-    def update_approval_status(self, approval_id: str, status: ApprovalStatus, approved_by: str, timestamp: str) -> bool:
-        with self.conn:
-            cursor = self.conn.execute("""
-                UPDATE approvals
-                SET status = ?, approved_by = ?, approved_at = ?
-                WHERE approval_id = ?
-            """, (status.value, approved_by, timestamp, approval_id))
-            return cursor.rowcount > 0
+    def update_approval_status(self, approval_id: str, new_status: ApprovalStatus, approved_by: str, approved_at: str) -> bool:
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """UPDATE approval_queue SET status = ?, approved_by = ?, approved_at = ? WHERE approval_id = ?""",
+            (new_status.value, approved_by, approved_at, approval_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 
     def add_audit_log(self, entry: AuditLogEntry):
-        with self.conn:
-            self.conn.execute("""
-                INSERT INTO audit_logs (audit_id, timestamp, user_id, user_role, agent_id, action, domain, access_granted, denial_reason, query_summary, documents_accessed, guardrail_status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                entry.audit_id, entry.timestamp, entry.user_id, entry.user_role.value,
-                entry.agent_id, entry.action, entry.domain.value,
-                1 if entry.access_granted else 0, entry.denial_reason,
-                entry.query_summary, json.dumps(entry.documents_accessed), entry.guardrail_status
-            ))
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO audit_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                entry.audit_id,
+                entry.timestamp,
+                entry.user_id,
+                entry.user_role.value,
+                entry.agent_id,
+                entry.action,
+                entry.domain.value,
+                1 if entry.access_granted else 0,
+                entry.denial_reason,
+                entry.query_summary,
+                json.dumps(entry.documents_accessed),
+                entry.guardrail_status,
+            ),
+        )
+        conn.commit()
 
     def get_audit_logs(self) -> List[AuditLogEntry]:
-        cursor = self.conn.cursor()
+        conn = self._get_connection()
+        cursor = conn.cursor()
         cursor.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC")
+        rows = cursor.fetchall()
+
         logs = []
-        for row in cursor.fetchall():
-            logs.append(AuditLogEntry(
-                audit_id=row["audit_id"],
-                timestamp=row["timestamp"],
-                user_id=row["user_id"],
-                user_role=UserRole(row["user_role"]),
-                agent_id=row["agent_id"],
-                action=row["action"],
-                domain=DomainDomain(row["domain"]),
-                access_granted=bool(row["access_granted"]),
-                denial_reason=row["denial_reason"],
-                query_summary=row["query_summary"],
-                documents_accessed=json.loads(row["documents_accessed"]),
-                guardrail_status=row["guardrail_status"]
-            ))
+        for r in rows:
+            logs.append(
+                AuditLogEntry(
+                    audit_id=r[0],
+                    timestamp=r[1],
+                    user_id=r[2],
+                    user_role=UserRole(r[3]),
+                    agent_id=r[4],
+                    action=r[5],
+                    domain=DomainDomain(r[6]),
+                    access_granted=bool(r[7]),
+                    denial_reason=r[8],
+                    query_summary=r[9],
+                    documents_accessed=json.loads(r[10]),
+                    guardrail_status=r[11],
+                )
+            )
         return logs
 
     def record_activity(self, event: ActivityEvent):
-        with self.conn:
-            self.conn.execute("""
-                INSERT INTO activities (event_id, event_type, timestamp, domain, actor_role, details)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                event.event_id, event.event_type, event.timestamp,
-                event.domain.value, event.actor_role.value, json.dumps(event.details)
-            ))
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO activity_events VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                event.event_id,
+                event.event_type,
+                event.timestamp,
+                event.domain.value,
+                event.actor_role.value,
+                json.dumps(event.details),
+            ),
+        )
+        conn.commit()
 
     def get_activities(self) -> List[ActivityEvent]:
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM activities ORDER BY timestamp DESC")
-        events = []
-        for row in cursor.fetchall():
-            events.append(ActivityEvent(
-                event_id=row["event_id"],
-                event_type=row["event_type"],
-                timestamp=row["timestamp"],
-                domain=DomainDomain(row["domain"]),
-                actor_role=UserRole(row["actor_role"]),
-                details=json.loads(row["details"])
-            ))
-        return events
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM activity_events ORDER BY timestamp DESC")
+        rows = cursor.fetchall()
+
+        activities = []
+        for r in rows:
+            activities.append(
+                ActivityEvent(
+                    event_id=r[0],
+                    event_type=r[1],
+                    timestamp=r[2],
+                    domain=DomainDomain(r[3]),
+                    actor_role=UserRole(r[4]),
+                    details=json.loads(r[5]),
+                )
+            )
+        return activities
 
 
-# Global singleton instance for local runtime
-_store_instance: Optional[DataStore] = None
+_GLOBAL_STORE: Optional[DataStore] = None
+
 
 def get_store() -> DataStore:
-    global _store_instance
-    if _store_instance is None:
-        _store_instance = DataStore()
-    return _store_instance
+    global _GLOBAL_STORE
+    if _GLOBAL_STORE is None:
+        _GLOBAL_STORE = DataStore()
+    return _GLOBAL_STORE
