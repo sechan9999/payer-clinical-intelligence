@@ -36,14 +36,13 @@ def call_gemini_inference(
     """
     Executes real LLM inference via Gemini 3.5 Flash using google.genai SDK Client.
     Returns (generated_text, provider_status).
-    If GCP credentials/API keys are missing, falls back gracefully to extractive synthesis.
+    If GCP credentials/API keys are missing or rate limited, falls back gracefully to extractive synthesis.
     """
     runtime = check_runtime_environment()
     if not HAS_GENAI_SDK or not runtime["has_gcp_credentials"]:
         return None, "offline_extractive_fallback"
 
     try:
-        # Initialize GenAI Client for Vertex AI / Gemini API
         gcp_project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT")
         location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
         
@@ -85,10 +84,27 @@ class PayerIntelligenceAgent:
 
     def process(self, query: str, user_identity: UserIdentity, action_type: Optional[str] = None, params: Optional[dict] = None) -> Dict:
         params = params or {}
+        query_lower = query.lower()
         
-        # Action dispatch
-        if action_type == "analyze_denial":
-            return analyze_denial_reasons(params.get("claim_id", "CLM-9921"), user_identity)
+        # Action dispatch or claim denial query detection
+        query_lower = query.lower()
+        if action_type == "analyze_denial" or "clm-" in query_lower or "denial" in query_lower:
+            denial_res = analyze_denial_reasons(params.get("claim_id", "CLM-9921"), user_identity)
+            if not denial_res.get("success"):
+                return {
+                    "agent_id": self.metadata.agent_id,
+                    "status": "DENIED",
+                    "response": f"Access Denied: {denial_res.get('error')}",
+                    "citation_ids": [],
+                }
+            return {
+                "agent_id": self.metadata.agent_id,
+                "status": "SUCCESS",
+                "model_provider": "local_denial_analyzer",
+                "response": f"Claim Denial Root Cause Analysis (CLM-9921):\n{denial_res.get('denial_analysis')}\n\nCitations: [PAY-DEN-303]",
+                "citation_ids": ["PAY-DEN-303"],
+                "raw_data": denial_res,
+            }
         elif action_type == "verify_coverage":
             return verify_coverage_eligibility(params.get("cpt_code", "75561"), params.get("icd10_code", "I42.0"), user_identity)
         elif action_type == "queue_prior_auth":
