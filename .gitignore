@@ -1,16 +1,11 @@
+# Python bytecode & cache
 __pycache__/
 *.py[cod]
 *$py.class
-.venv/
-env/
-venv/
-ENV/
 .pytest_cache/
-.coverage
-htmlcov/
-*.db
-*.sqlite3
-.DS_Store
-.idea/
-.vscode/
-eval_results.json
+.venv/
+venv/
+
+# Intermediate raw video artifacts (> 100MB)
+docs/raw_demo_video.mp4
+docs/test_audio.wav

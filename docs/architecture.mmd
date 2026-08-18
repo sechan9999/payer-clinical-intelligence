@@ -1,0 +1,43 @@
+graph TD
+    Client[Client / Streamlit Dashboard / A2A Inspector] -->|HTTP / X-Fleet-Token| Ingress[Cloud Run Ingress]
+    
+    subgraph Event Intake & Bridge
+        PubSub[Pub/Sub Event Publisher<br/>CLAIM_DENIED Event Stream] -->|OIDC Push Subscription| Ingress
+    end
+
+    subgraph Security & Governance Layer
+        Ingress -->|1. Extract Identity| Identity[app/identity.py<br/>Server-Derived RBAC]
+        Ingress -->|2. Validate Input| Guardrail[app/guardrails.py<br/>Model Armor / Injection Filter]
+    end
+
+    Guardrail -->|3. Route Query| Coordinator[app/fleet.py<br/>Fleet Coordinator Agent]
+
+    subgraph Governed Agent Fleet Layer
+        Coordinator --> PayerAgent[Payer Intelligence Agent<br/>Autonomy Grade: drafts_only]
+        Coordinator --> ClinicalAgent[Clinical & Growth Agent<br/>Autonomy Grade: drafts_only]
+    end
+
+    subgraph SQL Pre-Retrieval Isolation Boundary
+        PayerAgent -->|4. Permitted Query| SQLFilter[app/retrieval.py<br/>SQL WHERE allowed_roles Filter]
+        ClinicalAgent -->|4. Permitted Query| SQLFilter
+        SQLFilter -->|SQL WHERE Clause| CloudSQL[(Cloud SQL PostgreSQL / SQLite<br/>Documents & Fee Schedules)]
+        SQLFilter -->|Vector Cosine Ranking| SemanticRanker[Semantic Vector Cosine Ranker<br/>pgvector Extension]
+    end
+
+    subgraph Gemini 3.5 Model Inference Layer
+        SemanticRanker -->|5. Permitted Candidates Only| Gemini[google-genai SDK<br/>Gemini 3.5 Flash / Vertex AI]
+    end
+
+    subgraph Human Approval Gate & Refusal Interception
+        PayerAgent -->|Sensitive Action Draft| ApprovalQueue[app/approvals.py<br/>Isolated Pending Queue]
+        ClinicalAgent -->|Sensitive Action Draft| ApprovalQueue
+        ApprovalQueue -->|6. Premature Dispatch Attempt| RefusalBlock[🚫 HTTP 409 Conflict<br/>Blocked External Action]
+        ApprovalQueue -->|7. HTTP Approval & Dispatch| HumanSupervisor[Medical Director / Human Supervisor]
+    end
+
+    subgraph Realtime Operations & Durable Persistence
+        PayerAgent -->|8. Audit Logs & Spans| AuditStore[(Audit Log Store & OpenTelemetry)]
+        ClinicalAgent -->|8. Audit Logs & Spans| AuditStore
+        AuditStore --> Prometheus[/metrics Prometheus Endpoint<br/>Stream Health Ratio 1.0/]
+        ApprovalQueue --> SSE[/fleet/inbox/sse<br/>Real-Time SSE Inbox Stream/]
+    end

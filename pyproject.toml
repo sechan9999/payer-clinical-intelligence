@@ -19,6 +19,11 @@ dependencies = [
     "opencv-python>=5.0.0.93",
     "imageio>=2.37.4",
     "pillow>=12.3.0",
+    "matplotlib>=3.10.9",
+    "gtts>=2.5.4",
+    "pyttsx3>=2.99",
+    "moviepy>=1.0.3",
+    "imageio-ffmpeg>=0.6.0",
 ]
 
 [project.optional-dependencies]

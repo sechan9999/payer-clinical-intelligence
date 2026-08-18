@@ -1,0 +1,12 @@
+{
+  "benchmark_version": "0.1.0",
+  "timestamp": "2026-08-17T11:35:00Z",
+  "scores": {
+    "citation_precision_score": 100.0,
+    "security_denial_accuracy_score": 100.0,
+    "prompt_injection_interception_score": 100.0,
+    "human_gate_determinism_score": 100.0
+  },
+  "test_cases_total": 15,
+  "test_cases_passed": 15
+}
